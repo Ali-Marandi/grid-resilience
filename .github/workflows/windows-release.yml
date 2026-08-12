@@ -1,0 +1,76 @@
+name: Windows build and release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Test Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run unit tests
+        run: python -m unittest -v
+
+  package-windows:
+    name: Build Windows executable
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build tooling
+        run: python -m pip install --upgrade pip -r requirements-build.txt
+      - name: Build standalone executable
+        run: >-
+          pyinstaller --noconfirm --clean --onefile --windowed
+          --name GridResilienceStudio
+          --collect-all tkinter
+          grid_resilience_desktop.py
+      - name: Smoke-test source modules
+        run: python -c "from grid_resilience import sample_network, ResilienceEngine; print(ResilienceEngine().analyse(sample_network()).resilience_index)"
+      - name: Publish build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GridResilienceStudio-Windows
+          path: dist/GridResilienceStudio.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package-windows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Windows executable
+        uses: actions/download-artifact@v4
+        with:
+          name: GridResilienceStudio-Windows
+          path: release-assets
+      - name: Generate checksum
+        run: sha256sum release-assets/GridResilienceStudio.exe > release-assets/GridResilienceStudio.exe.sha256
+      - name: Create release and attach artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release-assets/GridResilienceStudio.exe
+            release-assets/GridResilienceStudio.exe.sha256

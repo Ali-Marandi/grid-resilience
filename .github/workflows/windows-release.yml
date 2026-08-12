@@ -55,19 +55,19 @@ jobs:
         shell: pwsh
         run: >-
           Set-Content -Path dist/GridResilienceStudio-signing-status.txt -Value "UNSIGNED: Authenticode credentials or timestamp configuration were not supplied to this protected workflow." -NoNewline
-      - name: Authenticode sign and verify
-        if: ${{ secrets.WINDOWS_CERT_BASE64 != '' && secrets.WINDOWS_CERT_PASSWORD != '' && vars.AUTHENTICODE_TIMESTAMP_URL != '' }}
+      - name: Authenticode sign and verify when credentials are configured
         shell: pwsh
         env:
           WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
           WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
           AUTHENTICODE_TIMESTAMP_URL: ${{ vars.AUTHENTICODE_TIMESTAMP_URL }}
-        run: >-
-          .github/scripts/sign-windows-artifact.ps1
-          -ArtifactPath dist/GridResilienceStudio.exe
-          -CertificateBase64 $env:WINDOWS_CERT_BASE64
-          -CertificatePassword $env:WINDOWS_CERT_PASSWORD
-          -TimestampUrl $env:AUTHENTICODE_TIMESTAMP_URL
+        run: |
+          if ($env:WINDOWS_CERT_BASE64 -and $env:WINDOWS_CERT_PASSWORD -and $env:AUTHENTICODE_TIMESTAMP_URL) {
+            & .github/scripts/sign-windows-artifact.ps1 -ArtifactPath dist/GridResilienceStudio.exe -CertificateBase64 $env:WINDOWS_CERT_BASE64 -CertificatePassword $env:WINDOWS_CERT_PASSWORD -TimestampUrl $env:AUTHENTICODE_TIMESTAMP_URL
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } else {
+            Write-Host "Authenticode signing skipped because protected credentials or timestamp configuration are unavailable."
+          }
       - name: Publish build artifact
         uses: actions/upload-artifact@v4
         with:

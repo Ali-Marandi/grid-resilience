@@ -468,8 +468,8 @@ class GridResilienceApp(tk.Tk):
         return messagebox.askyesno(APP_NAME, "Create a new demonstration project? Any unsaved local changes will be discarded.")
 
     def _log(self, event: str) -> None:
-        from datetime import UTC, datetime
-        self.audit.append(f"{datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')} UTC — {event}")
+        from datetime import datetime, timezone
+        self.audit.append(f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC — {event}")
 
 
 def main() -> None:

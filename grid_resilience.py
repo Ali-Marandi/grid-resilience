@@ -7,7 +7,9 @@ control-room studies, protection studies, or certified AC/dynamic simulations.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 from enum import Enum
 import csv
 import json

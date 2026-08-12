@@ -5,6 +5,7 @@ from pathlib import Path
 from grid_resilience import (
     Branch,
     Bus,
+    CORE_VERSION,
     ContingencyKind,
     NetworkModel,
     ProjectStore,
@@ -38,7 +39,7 @@ class EngineTests(unittest.TestCase):
         self.assertGreater(summary.base_case.max_loading_pct, 0.0)
         self.assertGreaterEqual(summary.resilience_index, 0.0)
         self.assertLessEqual(summary.resilience_index, 100.0)
-        self.assertEqual(summary.engine_version, "1.0.0")
+        self.assertEqual(summary.engine_version, CORE_VERSION)
 
     def test_branch_outage_that_islands_load_is_identified(self):
         model = NetworkModel(

@@ -19,8 +19,9 @@ from pathlib import Path
 import tempfile
 from typing import Any, Iterable
 
-CORE_VERSION = "1.0.0"
-SCHEMA_VERSION = "grid-resilience/1.0"
+CORE_VERSION = "1.1.0"
+SCHEMA_VERSION = "grid-resilience/1.1"
+SUPPORTED_SCHEMAS = {"grid-resilience/1.0", SCHEMA_VERSION}
 
 
 class ValidationError(ValueError):
@@ -49,7 +50,14 @@ class Bus:
     name: str
     voltage_kv: float
     load_mw: float = 0.0
+    load_mvar: float = 0.0
     is_slack: bool = False
+    bus_type: str = "AUTO"  # AUTO, PQ, PV or SLACK
+    voltage_setpoint_pu: float = 1.0
+    voltage_min_pu: float = 0.94
+    voltage_max_pu: float = 1.06
+    shunt_g_pu: float = 0.0
+    shunt_b_pu: float = 0.0
     x: float | None = None
     y: float | None = None
     zone: str = "Default"
@@ -62,8 +70,14 @@ class Bus:
             issues.append(f"bus {self.id}: name cannot be empty")
         if self.voltage_kv <= 0:
             issues.append(f"bus {self.id}: voltage_kv must be positive")
-        if self.load_mw < 0:
-            issues.append(f"bus {self.id}: load_mw cannot be negative")
+        if self.load_mw < 0 or self.load_mvar < 0:
+            issues.append(f"bus {self.id}: load values cannot be negative")
+        if self.bus_type.upper() not in {"AUTO", "PQ", "PV", "SLACK"}:
+            issues.append(f"bus {self.id}: bus_type must be AUTO, PQ, PV or SLACK")
+        if not 0.5 <= self.voltage_setpoint_pu <= 1.5:
+            issues.append(f"bus {self.id}: voltage_setpoint_pu is outside a plausible range")
+        if self.voltage_min_pu <= 0 or self.voltage_min_pu > self.voltage_max_pu:
+            issues.append(f"bus {self.id}: invalid voltage limits")
         return issues
 
 
@@ -75,6 +89,10 @@ class Branch:
     to_bus: str
     reactance_pu: float
     thermal_limit_mva: float
+    resistance_pu: float = 0.0
+    line_charging_pu: float = 0.0
+    tap_ratio: float = 1.0
+    phase_shift_deg: float = 0.0
     in_service: bool = True
     kind: str = "line"
     owner: str = ""
@@ -89,6 +107,10 @@ class Branch:
             issues.append(f"branch {self.id}: reactance_pu must be positive")
         if self.thermal_limit_mva <= 0:
             issues.append(f"branch {self.id}: thermal_limit_mva must be positive")
+        if self.resistance_pu < 0:
+            issues.append(f"branch {self.id}: resistance_pu cannot be negative")
+        if self.tap_ratio <= 0:
+            issues.append(f"branch {self.id}: tap_ratio must be positive")
         return issues
 
 
@@ -99,6 +121,14 @@ class Generator:
     bus_id: str
     p_mw: float
     p_max_mw: float
+    p_min_mw: float = 0.0
+    q_mvar: float = 0.0
+    q_min_mvar: float = -100.0
+    q_max_mvar: float = 100.0
+    voltage_setpoint_pu: float = 1.0
+    cost_quadratic: float = 0.01
+    cost_linear: float = 20.0
+    cost_constant: float = 0.0
     in_service: bool = True
     dispatchable: bool = True
     fuel: str = "Other"
@@ -111,6 +141,12 @@ class Generator:
             issues.append(f"generator {self.id}: power values cannot be negative")
         if self.p_mw > self.p_max_mw + 1e-9:
             issues.append(f"generator {self.id}: p_mw exceeds p_max_mw")
+        if self.p_min_mw < 0 or self.p_min_mw > self.p_max_mw:
+            issues.append(f"generator {self.id}: invalid active-power limits")
+        if self.q_min_mvar > self.q_max_mvar:
+            issues.append(f"generator {self.id}: invalid reactive-power limits")
+        if self.cost_quadratic < 0:
+            issues.append(f"generator {self.id}: cost_quadratic cannot be negative")
         return issues
 
 
@@ -182,11 +218,11 @@ class NetworkModel:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "NetworkModel":
         schema = data.get("schema", SCHEMA_VERSION)
-        if schema != SCHEMA_VERSION:
+        if schema not in SUPPORTED_SCHEMAS:
             raise ValidationError(f"Unsupported project schema: {schema}")
         try:
             return cls(
-                schema=schema,
+                schema=SCHEMA_VERSION,
                 name=str(data["name"]),
                 base_mva=float(data["base_mva"]),
                 description=str(data.get("description", "")),

@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "grid-resilience"
-version = "1.0.0"
-description = "Deterministic N-1 grid resilience screening with a Windows desktop interface."
+version = "1.1.0"
+description = "Grid resilience screening with DC N-1, balanced AC power flow, industrial import and local governance controls."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [{name = "Ali Marandi"}]
 keywords = ["power-systems", "n-1", "contingency-analysis", "resilience", "desktop"]
@@ -16,14 +16,17 @@ classifiers = [
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
 ]
 
 [project.scripts]
 grid-resilience = "grid_resilience_desktop:main"
 
 [tool.setuptools]
-py-modules = ["grid_resilience", "grid_resilience_desktop"]
+py-modules = ["grid_resilience", "grid_resilience_ac", "grid_resilience_import", "grid_resilience_security", "grid_resilience_desktop"]
 
 [tool.unittest]
 start-directory = "tests"

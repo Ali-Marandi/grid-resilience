@@ -4,11 +4,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Callable
 
 from grid_resilience import (
     AnalysisSummary,
+    CORE_VERSION,
     NetworkModel,
     ProjectStore,
     ResilienceEngine,
@@ -17,9 +18,15 @@ from grid_resilience import (
     export_results_csv,
     sample_network,
 )
+from grid_resilience_ac import ACPowerFlowEngine, ACPowerFlowResult, EconomicDispatchEngine, OperationalOptimizationResult
+from grid_resilience_import import CIMCGMESImporter, IEECDFImporter, ImportReport
+from grid_resilience_security import (
+    AuthorizationError, HashChainedAuditLog, LocalIdentityStore, Permission, Principal,
+    Role, require,
+)
 
 APP_NAME = "Grid Resilience Studio"
-APP_VERSION = "1.0.0"
+APP_VERSION = CORE_VERSION
 
 COLORS = {
     "navy": "#0B1F35", "surface": "#F5F8FC", "white": "#FFFFFF", "ink": "#172B4D",
@@ -48,15 +55,25 @@ class GridResilienceApp(tk.Tk):
         self.minsize(1160, 720)
         self.configure(bg=COLORS["surface"])
         self.engine = ResilienceEngine()
+        self.ac_engine = ACPowerFlowEngine()
+        self.dispatch_engine = EconomicDispatchEngine()
         self.network: NetworkModel = sample_network()
         self.summary: AnalysisSummary | None = None
+        self.ac_result: ACPowerFlowResult | None = None
+        self.opf_result: OperationalOptimizationResult | None = None
+        self.import_report: ImportReport | None = None
         self.project_path: Path | None = None
         self.audit: list[str] = []
+        security_root = Path.home() / ".grid-resilience-studio"
+        self.identity_store = LocalIdentityStore(security_root / "identities.json")
+        self.audit_log = HashChainedAuditLog(security_root / "audit.jsonl")
+        self.principal: Principal | None = None
         self._configure_style()
         self._build_menu()
         self._build_layout()
         self._log("Application started with the validated demonstration project.")
         self._refresh_all()
+        self.after_idle(self._sign_in_or_bootstrap)
 
     def _configure_style(self) -> None:
         style = ttk.Style(self)
@@ -91,13 +108,23 @@ class GridResilienceApp(tk.Tk):
         project.add_command(label="Save project", command=self._save_project)
         project.add_command(label="Save project as…", command=lambda: self._save_project(force_dialog=True))
         project.add_separator()
+        project.add_command(label="Import IEEE CDF…", command=self._import_cdf)
+        project.add_command(label="Import CIM/CGMES…", command=self._import_cgmes)
+        project.add_separator()
         project.add_command(label="Exit", command=self.destroy)
         menu.add_cascade(label="Project", menu=project)
         analysis = tk.Menu(menu, tearoff=False)
         analysis.add_command(label="Validate model", command=self._validate_model)
         analysis.add_command(label="Run N-1 screening", command=self._run_analysis)
+        analysis.add_command(label="Run balanced AC power flow", command=self._run_ac_power_flow)
+        analysis.add_command(label="Run economic dispatch + AC validation", command=self._run_operational_optimization)
         analysis.add_command(label="Export contingency CSV…", command=self._export_csv)
         menu.add_cascade(label="Analysis", menu=analysis)
+        security_menu = tk.Menu(menu, tearoff=False)
+        security_menu.add_command(label="Sign in / switch user…", command=self._sign_in_or_bootstrap)
+        security_menu.add_command(label="Create local user…", command=self._create_local_user)
+        security_menu.add_command(label="Verify audit chain", command=self._verify_audit_chain)
+        menu.add_cascade(label="Security", menu=security_menu)
         help_menu = tk.Menu(menu, tearoff=False)
         help_menu.add_command(label="Methodology and limitations", command=self._show_methodology)
         help_menu.add_command(label="About", command=lambda: messagebox.showinfo(APP_NAME, f"{APP_NAME} {APP_VERSION}\nDeterministic local engineering screening."))
@@ -138,6 +165,10 @@ class GridResilienceApp(tk.Tk):
         ttk.Label(side, text="WORKSPACE", style="Section.TLabel").pack(anchor="w")
         ttk.Label(side, text="Local project controls and engineering workflow.", style="Panel.TLabel", foreground=COLORS["muted"], wraplength=205).pack(anchor="w", pady=(5, 18))
         self._side_button(side, "Run N-1 screening", self._run_analysis, primary=True)
+        self._side_button(side, "Run AC power flow", self._run_ac_power_flow)
+        self._side_button(side, "Economic dispatch + AC check", self._run_operational_optimization)
+        self._side_button(side, "Import IEEE CDF", self._import_cdf)
+        self._side_button(side, "Import CIM/CGMES", self._import_cgmes)
         self._side_button(side, "Validate model", self._validate_model)
         self._side_button(side, "Edit model data", self._edit_model)
         self._side_button(side, "Open project", self._open_project)
@@ -149,7 +180,7 @@ class GridResilienceApp(tk.Tk):
         self._side_button(side, "View audit trail", self._show_audit)
         ttk.Separator(side).pack(fill="x", pady=16)
         tk.Label(side, text="ENGINEERING SCREENING ONLY", bg="#FFF4E5", fg="#8C4D00", font=("Segoe UI Semibold", 8), padx=8, pady=6).pack(anchor="w", fill="x")
-        ttk.Label(side, text="DC power flow does not replace approved AC, protection or dynamic studies.", style="Panel.TLabel", foreground=COLORS["muted"], wraplength=205).pack(anchor="w", pady=(8, 0))
+        ttk.Label(side, text="DC and balanced AC screening do not replace approved protection, short-circuit or dynamic studies.", style="Panel.TLabel", foreground=COLORS["muted"], wraplength=205).pack(anchor="w", pady=(8, 0))
 
     def _side_button(self, parent: ttk.Frame, title: str, command: Callable[[], None], primary: bool = False) -> None:
         ttk.Button(parent, text=title, command=command, style="Primary.TButton" if primary else "Secondary.TButton").pack(fill="x", pady=(0, 8))
@@ -312,7 +343,12 @@ class GridResilienceApp(tk.Tk):
             x = bus.x if bus.x is not None else 80 + (index % 3) * 150
             y = bus.y if bus.y is not None else 100 + (index // 3) * 140
             positions[bus.id] = (x / 500 * (width - 100) + 50, y / 380 * (height - 100) + 50)
-        flow_map = {flow.branch_id: flow for flow in self.summary.base_case.branch_flows} if self.summary else {}
+        if self.ac_result is not None:
+            flow_map = {flow.branch_id: flow for flow in self.ac_result.branches}
+        elif self.summary is not None:
+            flow_map = {flow.branch_id: flow for flow in self.summary.base_case.branch_flows}
+        else:
+            flow_map = {}
         for branch in self.network.branches:
             if branch.from_bus not in positions or branch.to_bus not in positions:
                 continue
@@ -323,7 +359,7 @@ class GridResilienceApp(tk.Tk):
             color = COLORS["red"] if loading > 100 else COLORS["amber"] if loading > 85 else COLORS["teal"]
             canvas.create_line(x1, y1, x2, y2, fill=color, width=4 if loading > 85 else 3, capstyle="round")
             mx, my = (x1 + x2) / 2, (y1 + y2) / 2
-            caption = f"{branch.id}\n{loading:.0f}%" if self.summary else branch.id
+            caption = f"{branch.id}\n{loading:.0f}%" if flow_map else branch.id
             canvas.create_text(mx, my - 13, text=caption, fill=COLORS["muted"], font=("Segoe UI", 8), justify="center")
         for bus in self.network.buses:
             x, y = positions[bus.id]
@@ -338,7 +374,176 @@ class GridResilienceApp(tk.Tk):
             canvas.create_rectangle(x, legend_y - 5, x + 11, legend_y + 6, fill=color, outline=color)
             canvas.create_text(x + 18, legend_y, text=label, anchor="w", fill=COLORS["muted"], font=("Segoe UI", 8))
 
+    def _authorize(self, permission: Permission) -> bool:
+        if self.principal is None:
+            messagebox.showwarning(APP_NAME, "Sign in before performing this operation.")
+            self._sign_in_or_bootstrap()
+            return False
+        try:
+            require(self.principal, permission)
+            return True
+        except AuthorizationError as exc:
+            self._record("authorization", "denied", f"{permission.value}: {exc}")
+            messagebox.showerror(APP_NAME, f"Access denied.\n\n{exc}")
+            return False
+
+    def _record(self, action: str, outcome: str, detail: str = "") -> None:
+        actor = self.principal if self.principal is not None else "local-system"
+        try:
+            self.audit_log.append(actor, action, outcome, detail)
+        except OSError:
+            pass
+        self._log(f"{action}: {outcome}" + (f" — {detail}" if detail else ""))
+
+    def _sign_in_or_bootstrap(self) -> None:
+        try:
+            if not self.identity_store.exists():
+                username = simpledialog.askstring(APP_NAME, "No local identity store exists.\n\nCreate the initial administrator username:", parent=self)
+                if not username:
+                    return
+                password = simpledialog.askstring(APP_NAME, "Create a strong administrator password (12+ characters, 3 character classes):", show="*", parent=self)
+                if password is None:
+                    return
+                confirmation = simpledialog.askstring(APP_NAME, "Confirm administrator password:", show="*", parent=self)
+                if password != confirmation:
+                    raise ValueError("Password confirmation does not match")
+                self.principal = self.identity_store.bootstrap_administrator(username, password)
+                self._record("identity_bootstrap", "success", f"administrator {self.principal.username} created")
+            else:
+                username = simpledialog.askstring(APP_NAME, "Username:", parent=self)
+                if not username:
+                    return
+                password = simpledialog.askstring(APP_NAME, "Password:", show="*", parent=self)
+                if password is None:
+                    return
+                self.principal = self.identity_store.authenticate(username, password)
+                self._record("sign_in", "success", f"role={self.principal.role.value}")
+            self.status_var.set(f"Signed in as {self.principal.username} ({self.principal.role.value})")
+            messagebox.showinfo(APP_NAME, f"Signed in as {self.principal.username} with {self.principal.role.value} role.")
+        except (AuthorizationError, ValueError) as exc:
+            self._record("sign_in", "failed", str(exc))
+            messagebox.showerror(APP_NAME, f"Authentication could not complete.\n\n{exc}")
+
+    def _create_local_user(self) -> None:
+        if not self._authorize(Permission.MANAGE_USERS):
+            return
+        username = simpledialog.askstring(APP_NAME, "New username:", parent=self)
+        if not username:
+            return
+        password = simpledialog.askstring(APP_NAME, "New password (12+ characters, 3 character classes):", show="*", parent=self)
+        if password is None:
+            return
+        role_text = simpledialog.askstring(APP_NAME, "Role: viewer, analyst or operator", initialvalue="analyst", parent=self)
+        if not role_text:
+            return
+        try:
+            role = Role(role_text.strip().lower())
+            if role is Role.ADMINISTRATOR:
+                raise ValueError("Create administrator accounts through the governed identity procedure, not this quick dialog")
+            account = self.identity_store.create_user(self.principal, username, password, role)
+            self._record("user_create", "success", f"{account.username}:{account.role.value}")
+            messagebox.showinfo(APP_NAME, f"Created local {account.role.value} account for {account.username}.")
+        except (ValueError, AuthorizationError) as exc:
+            self._record("user_create", "failed", str(exc))
+            messagebox.showerror(APP_NAME, f"Could not create local user.\n\n{exc}")
+
+    def _verify_audit_chain(self) -> None:
+        if not self._authorize(Permission.VIEW_AUDIT):
+            return
+        valid, message = self.audit_log.verify()
+        self._record("audit_verify", "success" if valid else "failed", message)
+        (messagebox.showinfo if valid else messagebox.showerror)(APP_NAME, message)
+
+    def _import_cdf(self) -> None:
+        self._import_network("cdf")
+
+    def _import_cgmes(self) -> None:
+        self._import_network("cgmes")
+
+    def _import_network(self, kind: str) -> None:
+        if not self._authorize(Permission.IMPORT_NETWORK):
+            return
+        if kind == "cdf":
+            selected = filedialog.askopenfilename(title="Import IEEE CDF", filetypes=[("IEEE CDF", "*.cdf *.txt"), ("All files", "*.*")])
+            importer = IEECDFImporter()
+        else:
+            selected = filedialog.askopenfilename(title="Import CIM/CGMES", filetypes=[("CGMES package", "*.zip *.xml *.rdf"), ("All files", "*.*")])
+            importer = CIMCGMESImporter()
+        if not selected:
+            return
+        try:
+            report = importer.load(selected)
+            self.import_report = report
+            issue_text = "\n".join(f"[{item.severity}] {item.code}: {item.message}" for item in report.issues[:12]) or "No importer messages."
+            if report.ready_for_analysis and messagebox.askyesno(APP_NAME, f"Import completed.\n\n{issue_text}\n\nReplace the active project with this imported network?"):
+                self.network = report.model
+                self.summary = self.ac_result = self.opf_result = None
+                self.project_path = None
+                self._record(f"import_{kind}", "success", Path(selected).name)
+                self.status_var.set(f"Imported {Path(selected).name}; review provenance before analysis.")
+                self._refresh_all()
+            elif not report.ready_for_analysis:
+                self._record(f"import_{kind}", "failed", Path(selected).name)
+                messagebox.showerror(APP_NAME, f"Import did not produce an analyzable network.\n\n{issue_text}")
+        except (OSError, ValidationError, ValueError) as exc:
+            self._record(f"import_{kind}", "failed", str(exc))
+            messagebox.showerror(APP_NAME, f"Import could not complete.\n\n{exc}")
+
+    def _run_ac_power_flow(self) -> None:
+        if not self._authorize(Permission.RUN_AC_POWER_FLOW):
+            return
+        try:
+            self.config(cursor="watch")
+            self.update_idletasks()
+            self.ac_result = self.ac_engine.solve(self.network)
+            self.opf_result = None
+            brief = [
+                "Balanced AC power flow completed.",
+                f"Convergence: {self.ac_result.iterations} Newton iterations; maximum mismatch {self.ac_result.max_mismatch_mva:.6g} MVA.",
+                f"Active losses: {self.ac_result.total_losses_mw:.3f} MW; reactive losses: {self.ac_result.total_losses_mvar:.3f} Mvar.",
+                f"Maximum branch loading: {self.ac_result.max_loading_pct:.1f}%.",
+                *self.ac_result.messages,
+                "\nThis is balanced steady-state AC screening, not a protection, short-circuit or dynamic-stability study.",
+            ]
+            self._set_brief("\n".join(brief))
+            self._draw_network()
+            self._record("ac_power_flow", "success", f"iterations={self.ac_result.iterations}")
+            self.status_var.set("AC power flow completed.")
+        except (ValidationError, RuntimeError) as exc:
+            self._record("ac_power_flow", "failed", str(exc))
+            messagebox.showerror(APP_NAME, f"AC power flow could not complete.\n\n{exc}")
+        finally:
+            self.config(cursor="")
+
+    def _run_operational_optimization(self) -> None:
+        if not self._authorize(Permission.RUN_OPTIMIZATION):
+            return
+        try:
+            self.config(cursor="watch")
+            self.update_idletasks()
+            self.opf_result = self.dispatch_engine.optimize_and_validate(self.network, self.ac_engine)
+            self.ac_result = self.opf_result.ac_power_flow
+            dispatch = self.opf_result.dispatch
+            brief = [
+                "Constrained economic dispatch with AC feasibility post-check completed.",
+                f"Dispatch objective: {dispatch.objective_cost_per_hour:.3f} cost-units/hour; dispatched demand: {dispatch.dispatched_mw:.3f} MW.",
+                f"Economic dispatch feasible: {'yes' if dispatch.feasible else 'no'}; AC post-check feasible: {'yes' if self.opf_result.feasible_after_ac_check else 'no'}.",
+                "\nThis procedure is not a certified nonlinear AC-OPF. Review all constraints and violations before using its setpoints.",
+                *self.opf_result.violations,
+            ]
+            self._set_brief("\n".join(brief))
+            self._draw_network()
+            self._record("economic_dispatch_ac_check", "success" if self.opf_result.feasible_after_ac_check else "warning", f"objective={dispatch.objective_cost_per_hour:.3f}")
+            self.status_var.set("Economic dispatch and AC feasibility check completed.")
+        except (ValidationError, RuntimeError) as exc:
+            self._record("economic_dispatch_ac_check", "failed", str(exc))
+            messagebox.showerror(APP_NAME, f"Optimization could not complete.\n\n{exc}")
+        finally:
+            self.config(cursor="")
+
     def _new_sample(self) -> None:
+        if not self._authorize(Permission.EDIT_PROJECT):
+            return
         if not self._confirm_discard():
             return
         self.network = sample_network()
@@ -349,6 +554,8 @@ class GridResilienceApp(tk.Tk):
         self._refresh_all()
 
     def _open_project(self) -> None:
+        if not self._authorize(Permission.VIEW_PROJECT):
+            return
         selected = filedialog.askopenfilename(title="Open Grid Resilience project", filetypes=[("Grid Resilience project", "*.json"), ("All files", "*.*")])
         if not selected:
             return
@@ -363,6 +570,8 @@ class GridResilienceApp(tk.Tk):
             messagebox.showerror(APP_NAME, f"Unable to open project.\n\n{exc}")
 
     def _save_project(self, force_dialog: bool = False) -> None:
+        if not self._authorize(Permission.EDIT_PROJECT):
+            return
         destination = self.project_path
         if force_dialog or destination is None:
             selected = filedialog.asksaveasfilename(title="Save Grid Resilience project", defaultextension=".json", initialfile="grid-resilience-project.json", filetypes=[("Grid Resilience project", "*.json")])
@@ -378,6 +587,8 @@ class GridResilienceApp(tk.Tk):
             messagebox.showerror(APP_NAME, f"Unable to save project.\n\n{exc}")
 
     def _validate_model(self) -> None:
+        if not self._authorize(Permission.VIEW_PROJECT):
+            return
         issues = self.network.validate()
         self._refresh_quality()
         if issues:
@@ -390,6 +601,8 @@ class GridResilienceApp(tk.Tk):
             self.status_var.set("Validation passed.")
 
     def _run_analysis(self) -> None:
+        if not self._authorize(Permission.RUN_SCREENING):
+            return
         try:
             self.network.require_valid()
             self.config(cursor="watch")
@@ -417,6 +630,8 @@ class GridResilienceApp(tk.Tk):
             self.contingency_tree.insert("", "end", values=(rank, result.status.value.title(), f"{result.id} · {result.element_name}", f"{result.severity_score:.1f}", max_loading, f"{result.unserved_load_mw:.1f}", result.message), tags=(tag,))
 
     def _export_csv(self) -> None:
+        if not self._authorize(Permission.EXPORT_RESULTS):
+            return
         if self.summary is None:
             messagebox.showwarning(APP_NAME, "Run N-1 screening before exporting a ranked contingency queue.")
             return
@@ -432,6 +647,8 @@ class GridResilienceApp(tk.Tk):
             messagebox.showerror(APP_NAME, f"Unable to export CSV.\n\n{exc}")
 
     def _edit_model(self) -> None:
+        if not self._authorize(Permission.EDIT_PROJECT):
+            return
         dialog = tk.Toplevel(self)
         dialog.title("Edit model data")
         dialog.geometry("900x700")
@@ -459,10 +676,13 @@ class GridResilienceApp(tk.Tk):
         ttk.Button(controls, text="Validate and apply", command=apply, style="Primary.TButton").pack(side="right", padx=(0, 8))
 
     def _show_audit(self) -> None:
-        messagebox.showinfo("Session audit trail", "\n".join(self.audit[-40:]) if self.audit else "No events recorded.")
+        if not self._authorize(Permission.VIEW_AUDIT):
+            return
+        persisted = [f"{entry.timestamp} — {entry.actor} — {entry.action}: {entry.outcome} {entry.detail}" for entry in self.audit_log.entries(40)]
+        messagebox.showinfo("Audit trail", "\n".join(persisted or self.audit[-40:]) if (persisted or self.audit) else "No events recorded.")
 
     def _show_methodology(self) -> None:
-        messagebox.showinfo("Methodology and limitations", "This release applies deterministic balanced DC power-flow screening to base and single-element outage scenarios. It evaluates topology, line thermal limits and estimated unserved load after islanding. It does not calculate AC voltage, reactive power, protection coordination, short circuit or dynamic stability. Independently validate all inputs and use approved engineering studies before operational decisions.")
+        messagebox.showinfo("Methodology and limitations", "This release provides deterministic DC N-1 screening, balanced Newton–Raphson AC power flow, and quadratic-cost economic dispatch with an AC feasibility post-check. The dispatch feature is not a certified nonlinear AC-OPF; CDF inputs may contain inferred operational/economic data; and the CIM/CGMES adapter is a documented subset importer rather than a conformity claim. It does not calculate protection coordination, short circuit, unbalanced networks or dynamic stability. Independently validate all inputs and use approved engineering studies before operational decisions.")
 
     def _confirm_discard(self) -> bool:
         return messagebox.askyesno(APP_NAME, "Create a new demonstration project? Any unsaved local changes will be discarded.")

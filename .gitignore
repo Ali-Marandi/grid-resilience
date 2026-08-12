@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.spec
+build/
+dist/
+.pytest_cache/
+.coverage
+*.gridresilience.json
+*.csv
+.vscode/
+.idea/

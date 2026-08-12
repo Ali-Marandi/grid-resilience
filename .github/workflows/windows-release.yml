@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -44,13 +44,32 @@ jobs:
           --name GridResilienceStudio
           --collect-all tkinter
           grid_resilience_desktop.py
-      - name: Smoke-test source modules
-        run: python -c "from grid_resilience import sample_network, ResilienceEngine; print(ResilienceEngine().analyse(sample_network()).resilience_index)"
+      - name: Smoke-test analytical modules
+        run: >-
+          python -c "from grid_resilience import sample_network; from grid_resilience_ac import ACPowerFlowEngine, EconomicDispatchEngine; n=sample_network(); assert ACPowerFlowEngine().solve(n).converged; assert EconomicDispatchEngine().optimize_and_validate(n).ac_power_flow"
+      - name: Mark unsigned build by default
+        shell: pwsh
+        run: Set-Content -Path dist/GridResilienceStudio-signing-status.txt -Value "UNSIGNED: Authenticode credentials or timestamp configuration were not supplied to this protected workflow." -NoNewline
+      - name: Authenticode sign and verify
+        if: ${{ secrets.WINDOWS_CERT_BASE64 != '' && secrets.WINDOWS_CERT_PASSWORD != '' && vars.AUTHENTICODE_TIMESTAMP_URL != '' }}
+        shell: pwsh
+        env:
+          WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+          AUTHENTICODE_TIMESTAMP_URL: ${{ vars.AUTHENTICODE_TIMESTAMP_URL }}
+        run: >-
+          .github/scripts/sign-windows-artifact.ps1
+          -ArtifactPath dist/GridResilienceStudio.exe
+          -CertificateBase64 $env:WINDOWS_CERT_BASE64
+          -CertificatePassword $env:WINDOWS_CERT_PASSWORD
+          -TimestampUrl $env:AUTHENTICODE_TIMESTAMP_URL
       - name: Publish build artifact
         uses: actions/upload-artifact@v4
         with:
           name: GridResilienceStudio-Windows
-          path: dist/GridResilienceStudio.exe
+          path: |
+            dist/GridResilienceStudio.exe
+            dist/GridResilienceStudio-signing-status.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -74,3 +93,4 @@ jobs:
           files: |
             release-assets/GridResilienceStudio.exe
             release-assets/GridResilienceStudio.exe.sha256
+            release-assets/GridResilienceStudio-signing-status.txt

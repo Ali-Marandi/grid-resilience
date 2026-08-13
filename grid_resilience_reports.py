@@ -70,9 +70,10 @@ def export_pdf_report(
     pdf.ln(3)
     for label, value in _report_lines(network, n1, n2, transient):
         pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(62, 7, label.encode("latin-1", "replace").decode("latin-1"))
+        pdf.cell(0, 6, f"{label}:".encode("latin-1", "replace").decode("latin-1"))
+        pdf.ln(6)
         pdf.set_font("Helvetica", size=10)
-        pdf.multi_cell(0, 7, value.encode("latin-1", "replace").decode("latin-1"))
+        pdf.multi_cell(0, 6, value.encode("latin-1", "replace").decode("latin-1"))
     pdf.ln(4)
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(0, 7, "Engineering limitation")

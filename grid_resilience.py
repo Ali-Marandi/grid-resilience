@@ -19,9 +19,9 @@ from pathlib import Path
 import tempfile
 from typing import Any, Iterable
 
-CORE_VERSION = "1.1.0"
-SCHEMA_VERSION = "grid-resilience/1.1"
-SUPPORTED_SCHEMAS = {"grid-resilience/1.0", SCHEMA_VERSION}
+CORE_VERSION = "1.2.0"
+SCHEMA_VERSION = "grid-resilience/1.2"
+SUPPORTED_SCHEMAS = {"grid-resilience/1.0", "grid-resilience/1.1", SCHEMA_VERSION}
 
 
 class ValidationError(ValueError):

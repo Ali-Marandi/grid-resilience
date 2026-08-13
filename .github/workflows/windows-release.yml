@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: write
+  attestations: write
+  id-token: write
 
 jobs:
   test:
@@ -25,7 +27,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Run unit tests
-        run: python -m unittest -v
+        run: python -m unittest discover -s tests -v
 
   package-windows:
     name: Build Windows executable
@@ -64,6 +66,23 @@ jobs:
           } else {
             Write-Host "Authenticode signing skipped because protected credentials or timestamp configuration are unavailable."
           }
+      - name: Create signing-status attestation
+        shell: pwsh
+        run: |
+          $artifact = "dist/GridResilienceStudio.exe"
+          $signature = Get-AuthenticodeSignature -FilePath $artifact
+          $status = [ordered]@{
+            schema = "grid-resilience/signing-status/1.0"
+            artifact = "GridResilienceStudio.exe"
+            sha256 = (Get-FileHash -Algorithm SHA256 -Path $artifact).Hash.ToLowerInvariant()
+            signingStatus = $signature.Status.ToString()
+            statusMessage = $signature.StatusMessage
+            certificateSubject = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { $null }
+            certificateThumbprint = if ($signature.SignerCertificate) { $signature.SignerCertificate.Thumbprint } else { $null }
+            timestampUtc = (Get-Date).ToUniversalTime().ToString("o")
+            workflowRun = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          $status | ConvertTo-Json -Depth 4 | Set-Content -Path dist/GridResilienceStudio-signing-status.json -Encoding utf8
       - name: Publish build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -71,8 +90,14 @@ jobs:
           path: |
             dist/GridResilienceStudio.exe
             dist/GridResilienceStudio-signing-status.txt
+            dist/GridResilienceStudio-signing-status.json
           if-no-files-found: error
           retention-days: 30
+      - name: Attest executable provenance
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/GridResilienceStudio.exe
 
   release:
     name: Publish GitHub release
@@ -80,6 +105,10 @@ jobs:
     needs: package-windows
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout release history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Download Windows executable
         uses: actions/download-artifact@v4
         with:
@@ -87,11 +116,17 @@ jobs:
           path: release-assets
       - name: Generate checksum
         run: sha256sum release-assets/GridResilienceStudio.exe > release-assets/GridResilienceStudio.exe.sha256
+      - name: Generate changelog from git history
+        run: |
+          git log --pretty=format:'- %s (%h)' > release-assets/CHANGELOG.md
+          printf '\n' >> release-assets/CHANGELOG.md
       - name: Create release and attach artifacts
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: release-assets/CHANGELOG.md
           files: |
             release-assets/GridResilienceStudio.exe
             release-assets/GridResilienceStudio.exe.sha256
             release-assets/GridResilienceStudio-signing-status.txt
+            release-assets/GridResilienceStudio-signing-status.json
+            release-assets/CHANGELOG.md

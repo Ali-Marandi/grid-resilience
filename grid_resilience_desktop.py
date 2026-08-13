@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
@@ -24,6 +25,9 @@ from grid_resilience_security import (
     AuthorizationError, HashChainedAuditLog, LocalIdentityStore, Permission, Principal,
     Role, require,
 )
+from grid_resilience_advanced import AdvancedContingencyEngine, N2AnalysisSummary
+from grid_resilience_transient import FaultEvent, TransientSimulationResult, TransientStabilityEngine
+from grid_resilience_reports import export_html_report, export_pdf_report
 
 APP_NAME = "Grid Resilience Studio"
 APP_VERSION = CORE_VERSION
@@ -57,11 +61,21 @@ class GridResilienceApp(tk.Tk):
         self.engine = ResilienceEngine()
         self.ac_engine = ACPowerFlowEngine()
         self.dispatch_engine = EconomicDispatchEngine()
+        self.transient_engine = TransientStabilityEngine()
+        self.advanced_engine = AdvancedContingencyEngine()
         self.network: NetworkModel = sample_network()
         self.summary: AnalysisSummary | None = None
         self.ac_result: ACPowerFlowResult | None = None
         self.opf_result: OperationalOptimizationResult | None = None
         self.import_report: ImportReport | None = None
+        self.transient_result: TransientSimulationResult | None = None
+        self.n2_summary: N2AnalysisSummary | None = None
+        self._canvas_positions: dict[str, tuple[float, float]] = {}
+        self._topology_preview: dict[str, tuple[float, float]] = {}
+        self._dragged_bus_id: str | None = None
+        self._dark_mode = False
+        self._detached_topology_canvas: tk.Canvas | None = None
+        self._detached_transient_canvas: tk.Canvas | None = None
         self.project_path: Path | None = None
         self.audit: list[str] = []
         security_root = Path.home() / ".grid-resilience-studio"
@@ -100,6 +114,22 @@ class GridResilienceApp(tk.Tk):
         style.configure("TNotebook.Tab", padding=(16, 9), font=("Segoe UI Semibold", 9), background="#EAF1F8", foreground=COLORS["slate"])
         style.map("TNotebook.Tab", background=[("selected", COLORS["white"])], foreground=[("selected", COLORS["blue"])])
 
+    def _toggle_theme(self) -> None:
+        self._dark_mode = not self._dark_mode
+        COLORS.update({
+            "surface": "#17212B", "white": "#22313F", "ink": "#E8F0F7", "muted": "#AABCCD", "line": "#3B4F60", "navy": "#071722", "blue": "#57A7FF", "teal": "#2DD4BF", "green": "#5EE0A6", "amber": "#F0B45C", "red": "#FF7D7D", "slate": "#C1D6E8",
+        } if self._dark_mode else {
+            "surface": "#F5F8FC", "white": "#FFFFFF", "ink": "#172B4D", "muted": "#5F6B7A", "line": "#D7E0EA", "navy": "#0B1F35", "blue": "#2476D3", "teal": "#00A59A", "green": "#17825D", "amber": "#B7791F", "red": "#C93838", "slate": "#334E68",
+        })
+        self.configure(bg=COLORS["surface"])
+        self._configure_style()
+        self.network_canvas.configure(bg="#1A2733" if self._dark_mode else "#FBFDFF")
+        if hasattr(self, "transient_canvas"):
+            self.transient_canvas.configure(bg="#1A2733" if self._dark_mode else "#FBFDFF")
+        self._draw_network()
+        self._draw_transient()
+        self.status_var.set("Dark theme enabled." if self._dark_mode else "Light theme enabled.")
+
     def _build_menu(self) -> None:
         menu = tk.Menu(self)
         project = tk.Menu(menu, tearoff=False)
@@ -118,8 +148,17 @@ class GridResilienceApp(tk.Tk):
         analysis.add_command(label="Run N-1 screening", command=self._run_analysis)
         analysis.add_command(label="Run balanced AC power flow", command=self._run_ac_power_flow)
         analysis.add_command(label="Run economic dispatch + AC validation", command=self._run_operational_optimization)
+        analysis.add_command(label="Run transient stability screening…", command=self._run_transient_stability)
+        analysis.add_command(label="Run N-2 and cascade screening", command=self._run_n2_analysis)
         analysis.add_command(label="Export contingency CSV…", command=self._export_csv)
+        analysis.add_command(label="Export HTML engineering report…", command=self._export_html_report)
+        analysis.add_command(label="Export PDF engineering report…", command=self._export_pdf_report)
         menu.add_cascade(label="Analysis", menu=analysis)
+        view_menu = tk.Menu(menu, tearoff=False)
+        view_menu.add_command(label="Toggle light / dark theme", command=self._toggle_theme)
+        view_menu.add_command(label="Detach topology editor", command=self._detach_topology_editor)
+        view_menu.add_command(label="Detach transient swing curves", command=self._detach_transient_panel)
+        menu.add_cascade(label="View", menu=view_menu)
         security_menu = tk.Menu(menu, tearoff=False)
         security_menu.add_command(label="Sign in / switch user…", command=self._sign_in_or_bootstrap)
         security_menu.add_command(label="Create local user…", command=self._create_local_user)
@@ -167,6 +206,8 @@ class GridResilienceApp(tk.Tk):
         self._side_button(side, "Run N-1 screening", self._run_analysis, primary=True)
         self._side_button(side, "Run AC power flow", self._run_ac_power_flow)
         self._side_button(side, "Economic dispatch + AC check", self._run_operational_optimization)
+        self._side_button(side, "Run transient stability", self._run_transient_stability)
+        self._side_button(side, "Run N-2 + cascade screening", self._run_n2_analysis)
         self._side_button(side, "Import IEEE CDF", self._import_cdf)
         self._side_button(side, "Import CIM/CGMES", self._import_cgmes)
         self._side_button(side, "Validate model", self._validate_model)
@@ -177,6 +218,8 @@ class GridResilienceApp(tk.Tk):
         ttk.Label(side, text="GOVERNANCE", style="Section.TLabel").pack(anchor="w")
         ttk.Label(side, text="Every analysis run records the engine version, timestamp and screening outcomes in this session.", style="Panel.TLabel", foreground=COLORS["muted"], wraplength=205).pack(anchor="w", pady=(5, 12))
         self._side_button(side, "Export ranked CSV", self._export_csv)
+        self._side_button(side, "Export HTML report", self._export_html_report)
+        self._side_button(side, "Export PDF report", self._export_pdf_report)
         self._side_button(side, "View audit trail", self._show_audit)
         ttk.Separator(side).pack(fill="x", pady=16)
         tk.Label(side, text="ENGINEERING SCREENING ONLY", bg="#FFF4E5", fg="#8C4D00", font=("Segoe UI Semibold", 8), padx=8, pady=6).pack(anchor="w", fill="x")
@@ -195,12 +238,21 @@ class GridResilienceApp(tk.Tk):
         overview = ttk.Frame(notebook, style="Panel.TFrame", padding=18)
         contingencies = ttk.Frame(notebook, style="Panel.TFrame", padding=18)
         data_quality = ttk.Frame(notebook, style="Panel.TFrame", padding=18)
+        transient = ttk.Frame(notebook, style="Panel.TFrame", padding=18)
+        n2_cases = ttk.Frame(notebook, style="Panel.TFrame", padding=18)
+        topology = ttk.Frame(notebook, style="Panel.TFrame", padding=18)
         notebook.add(overview, text="Network overview")
         notebook.add(contingencies, text="Contingency queue")
         notebook.add(data_quality, text="Model quality")
+        notebook.add(transient, text="Transient stability")
+        notebook.add(n2_cases, text="N-2 & cascades")
+        notebook.add(topology, text="Topology editor")
         self._build_overview(overview)
         self._build_contingencies(contingencies)
         self._build_data_quality(data_quality)
+        self._build_transient(transient)
+        self._build_n2(n2_cases)
+        self._build_topology_editor(topology)
 
     def _build_overview(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=3)
@@ -216,6 +268,9 @@ class GridResilienceApp(tk.Tk):
         self.network_canvas = tk.Canvas(canvas_panel, bg="#FBFDFF", highlightthickness=0)
         self.network_canvas.grid(row=0, column=0, sticky="nsew")
         self.network_canvas.bind("<Configure>", lambda event: self._draw_network())
+        self.network_canvas.bind("<ButtonPress-1>", self._topology_press)
+        self.network_canvas.bind("<B1-Motion>", self._topology_drag)
+        self.network_canvas.bind("<ButtonRelease-1>", self._topology_release)
         insights = ttk.Frame(parent, style="Card.TFrame", padding=16)
         insights.grid(row=1, column=1, sticky="nsew", pady=(14, 0))
         ttk.Label(insights, text="Decision brief", style="Section.TLabel").pack(anchor="w")
@@ -257,6 +312,52 @@ class GridResilienceApp(tk.Tk):
         self.quality_text = tk.Text(parent, wrap="word", relief="solid", bd=1, bg="#FBFDFF", fg=COLORS["ink"], font=("Cascadia Mono", 9), padx=12, pady=12)
         self.quality_text.grid(row=2, column=0, sticky="nsew")
         self.quality_text.configure(state="disabled")
+
+    def _build_transient(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(1, weight=1)
+        header = ttk.Frame(parent, style="Panel.TFrame")
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        ttk.Label(header, text="Rotor-angle and rotor-speed screening", style="Section.TLabel").pack(side="left")
+        ttk.Button(header, text="Run event", command=self._run_transient_stability, style="Primary.TButton").pack(side="right")
+        panel = ttk.Frame(parent, style="Card.TFrame", padding=12)
+        panel.grid(row=1, column=0, sticky="nsew")
+        panel.columnconfigure(0, weight=1)
+        panel.rowconfigure(0, weight=1)
+        self.transient_canvas = tk.Canvas(panel, bg="#FBFDFF", highlightthickness=0)
+        self.transient_canvas.grid(row=0, column=0, sticky="nsew")
+        self.transient_canvas.bind("<Configure>", lambda event: self._draw_transient())
+        self.transient_caption = tk.StringVar(value="Run a fault application and clearing event to render multi-generator swing curves.")
+        ttk.Label(parent, textvariable=self.transient_caption, style="Panel.TLabel", foreground=COLORS["muted"], wraplength=900).grid(row=2, column=0, sticky="w", pady=(10, 0))
+
+    def _build_n2(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(1, weight=1)
+        toolbar = ttk.Frame(parent, style="Panel.TFrame")
+        toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        ttk.Label(toolbar, text="Ranked N-2 and overload-cascade screening", style="Section.TLabel").pack(side="left")
+        ttk.Button(toolbar, text="Run N-2", command=self._run_n2_analysis, style="Primary.TButton").pack(side="right")
+        columns = ("rank", "pair", "status", "severity", "loading", "cascade", "action")
+        self.n2_tree = ttk.Treeview(parent, columns=columns, show="headings", selectmode="browse")
+        headings = {"rank": ("Rank", 55), "pair": ("Outaged pair", 230), "status": ("Outcome", 100), "severity": ("Severity", 90), "loading": ("Max loading", 105), "cascade": ("Cascade", 85), "action": ("Review suggestion", 360)}
+        for key, (label, width) in headings.items():
+            self.n2_tree.heading(key, text=label)
+            self.n2_tree.column(key, width=width, anchor="w" if key in {"pair", "action"} else "center", stretch=key == "action")
+        self.n2_tree.grid(row=1, column=0, sticky="nsew")
+
+    def _build_topology_editor(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(1, weight=1)
+        toolbar = ttk.Frame(parent, style="Panel.TFrame")
+        toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        ttk.Label(toolbar, text="Drag buses to position the local topology", style="Section.TLabel").pack(side="left")
+        ttk.Button(toolbar, text="Detach panel", command=self._detach_topology_editor, style="Secondary.TButton").pack(side="right")
+        self.topology_canvas = tk.Canvas(parent, bg="#FBFDFF", highlightthickness=0)
+        self.topology_canvas.grid(row=1, column=0, sticky="nsew")
+        self.topology_canvas.bind("<Configure>", lambda event: self._draw_topology_editor())
+        self.topology_canvas.bind("<ButtonPress-1>", self._topology_press)
+        self.topology_canvas.bind("<B1-Motion>", self._topology_drag)
+        self.topology_canvas.bind("<ButtonRelease-1>", self._topology_release)
 
     def _build_statusbar(self) -> None:
         frame = tk.Frame(self, bg=COLORS["navy"], height=28)
@@ -343,6 +444,7 @@ class GridResilienceApp(tk.Tk):
             x = bus.x if bus.x is not None else 80 + (index % 3) * 150
             y = bus.y if bus.y is not None else 100 + (index // 3) * 140
             positions[bus.id] = (x / 500 * (width - 100) + 50, y / 380 * (height - 100) + 50)
+        self._canvas_positions = positions
         if self.ac_result is not None:
             flow_map = {flow.branch_id: flow for flow in self.ac_result.branches}
         elif self.summary is not None:
@@ -373,6 +475,184 @@ class GridResilienceApp(tk.Tk):
             x = 22 + index * 150
             canvas.create_rectangle(x, legend_y - 5, x + 11, legend_y + 6, fill=color, outline=color)
             canvas.create_text(x + 18, legend_y, text=label, anchor="w", fill=COLORS["muted"], font=("Segoe UI", 8))
+        if hasattr(self, "topology_canvas"):
+            self._draw_topology_editor()
+
+    def _draw_topology_editor(self, target: tk.Canvas | None = None) -> None:
+        canvas = target or getattr(self, "topology_canvas", None)
+        if canvas is None or not canvas.winfo_exists():
+            return
+        canvas.delete("all")
+        width, height = max(canvas.winfo_width(), 500), max(canvas.winfo_height(), 360)
+        positions: dict[str, tuple[float, float]] = {}
+        for index, bus in enumerate(self.network.buses):
+            x = bus.x if bus.x is not None else 80 + (index % 3) * 150
+            y = bus.y if bus.y is not None else 100 + (index // 3) * 140
+            positions[bus.id] = (x / 500 * (width - 100) + 50, y / 380 * (height - 100) + 50)
+        self._topology_preview = positions
+        for branch in self.network.branches:
+            if branch.from_bus in positions and branch.to_bus in positions:
+                canvas.create_line(*positions[branch.from_bus], *positions[branch.to_bus], fill=COLORS["line"], width=3, capstyle="round")
+        for bus in self.network.buses:
+            x, y = positions[bus.id]
+            canvas.create_oval(x - 24, y - 24, x + 24, y + 24, fill=COLORS["blue"] if bus.is_slack else COLORS["white"], outline=COLORS["teal"], width=3, tags=(f"bus:{bus.id}",))
+            canvas.create_text(x, y, text=bus.id, fill=COLORS["white"] if bus.is_slack else COLORS["ink"], font=("Segoe UI Semibold", 9), tags=(f"bus:{bus.id}",))
+            canvas.create_text(x, y + 38, text=bus.name, fill=COLORS["ink"], font=("Segoe UI", 8), tags=(f"bus:{bus.id}",))
+        canvas.create_text(16, height - 18, anchor="w", text="Drag a bus to update its local position. Save the project to persist it.", fill=COLORS["muted"], font=("Segoe UI", 8))
+
+    def _topology_press(self, event: tk.Event[tk.Misc]) -> None:
+        topology_canvases = (getattr(self, "topology_canvas", None), self._detached_topology_canvas)
+        positions = self._topology_preview if event.widget in topology_canvases else self._canvas_positions
+        for bus_id, (x, y) in positions.items():
+            if (event.x - x) ** 2 + (event.y - y) ** 2 <= 32 ** 2:
+                self._dragged_bus_id = bus_id
+                return
+
+    def _topology_drag(self, event: tk.Event[tk.Misc]) -> None:
+        if self._dragged_bus_id is None:
+            return
+        canvas = event.widget
+        width, height = max(canvas.winfo_width(), 500), max(canvas.winfo_height(), 360)
+        x = max(0.0, min(500.0, (event.x - 50) / max(1, width - 100) * 500))
+        y = max(0.0, min(380.0, (event.y - 50) / max(1, height - 100) * 380))
+        self.network.buses = [replace(bus, x=round(x, 2), y=round(y, 2)) if bus.id == self._dragged_bus_id else bus for bus in self.network.buses]
+        self._draw_network()
+        self._draw_topology_editor()
+        self._draw_topology_editor(self._detached_topology_canvas)
+
+    def _topology_release(self, event: tk.Event[tk.Misc]) -> None:
+        if self._dragged_bus_id is not None:
+            self._record("topology_position", "success", self._dragged_bus_id)
+            self.status_var.set(f"Updated local position for {self._dragged_bus_id}; save the project to persist it.")
+        self._dragged_bus_id = None
+
+    def _run_transient_stability(self) -> None:
+        if not self._authorize(Permission.RUN_SCREENING):
+            return
+        clearing = simpledialog.askfloat(APP_NAME, "Fault clearing time in seconds (screening):", initialvalue=0.20, minvalue=0.06, maxvalue=2.0, parent=self)
+        if clearing is None:
+            return
+        try:
+            fault = FaultEvent("UI-FAULT", apply_time_s=0.05, clear_time_s=clearing, severity=0.72, description="User-defined balanced fault screening")
+            self.transient_result = self.transient_engine.simulate(self.network, fault, duration_s=max(2.0, clearing + 1.2))
+            cct = self.transient_engine.critical_clearing_time(self.network, fault, duration_s=max(1.5, clearing + 1.0), search_max_s=min(1.0, max(clearing + 0.25, 0.35)), iterations=8)
+            self.transient_caption.set(f"Status: {self.transient_result.status.value}; maximum separation {self.transient_result.max_angle_separation_deg:.1f}°; CCT screening bound {cct.critical_clearing_time_s:.3f} s. {self.transient_result.disclaimer}")
+            self._record("transient_stability", self.transient_result.status.value, f"clear={clearing:.3f}s; cct={cct.critical_clearing_time_s:.3f}s")
+            self._swing_frame_index = 2
+            self._transient_animation_token = getattr(self, "_transient_animation_token", 0) + 1
+            self._animate_transient(self._transient_animation_token)
+            self.status_var.set("Transient stability screening completed; review disclaimer and assumptions.")
+        except (ValidationError, RuntimeError, ValueError) as exc:
+            self._record("transient_stability", "failed", str(exc))
+            messagebox.showerror(APP_NAME, f"Transient stability screening could not complete.\n\n{exc}")
+
+    def _animate_transient(self, token: int) -> None:
+        if token != getattr(self, "_transient_animation_token", token) or self.transient_result is None:
+            return
+        self._draw_transient(limit=self._swing_frame_index)
+        self._draw_transient(limit=self._swing_frame_index, target=self._detached_transient_canvas)
+        if self._swing_frame_index < len(self.transient_result.points):
+            self._swing_frame_index = min(len(self.transient_result.points), self._swing_frame_index + 4)
+            self.after(24, lambda: self._animate_transient(token))
+
+    def _draw_transient(self, limit: int | None = None, target: tk.Canvas | None = None) -> None:
+        canvas = target or getattr(self, "transient_canvas", None)
+        if canvas is None or not canvas.winfo_exists():
+            return
+        canvas.delete("all")
+        width, height = max(canvas.winfo_width(), 520), max(canvas.winfo_height(), 320)
+        result = self.transient_result
+        if result is None or not result.points:
+            canvas.create_text(width / 2, height / 2, text="Run a transient stability event to animate generator swing curves.", fill=COLORS["muted"], font=("Segoe UI", 10))
+            return
+        points = result.points[:limit] if limit is not None else result.points
+        all_angles = [value for point in result.points for value in point.rotor_angles_deg.values()]
+        minimum, maximum = min(all_angles) - 5, max(all_angles) + 5
+        left, right, top, bottom = 58, width - 28, 26, height - 42
+        canvas.create_line(left, top, left, bottom, fill=COLORS["line"])
+        canvas.create_line(left, bottom, right, bottom, fill=COLORS["line"])
+        colors = [COLORS["blue"], COLORS["teal"], COLORS["amber"], COLORS["red"]]
+        duration = max(result.points[-1].time_s, 0.001)
+        span = max(1.0, maximum - minimum)
+        for index, generator_id in enumerate(result.points[0].rotor_angles_deg):
+            curve: list[float] = []
+            for point in points:
+                curve.extend((left + point.time_s / duration * (right - left), bottom - (point.rotor_angles_deg[generator_id] - minimum) / span * (bottom - top)))
+            if len(curve) >= 4:
+                canvas.create_line(*curve, fill=colors[index % len(colors)], width=2, smooth=True)
+            canvas.create_text(right - 3, top + 15 * index, anchor="e", text=generator_id, fill=colors[index % len(colors)], font=("Segoe UI Semibold", 8))
+        canvas.create_text(left, 12, anchor="w", text="Rotor angle (degrees) · animated screening trace", fill=COLORS["muted"], font=("Segoe UI", 8))
+        canvas.create_text(right, bottom + 22, anchor="e", text=f"0 to {duration:.2f} seconds", fill=COLORS["muted"], font=("Segoe UI", 8))
+
+    def _run_n2_analysis(self) -> None:
+        if not self._authorize(Permission.RUN_SCREENING):
+            return
+        try:
+            self.n2_summary = self.advanced_engine.analyse_n2(self.network)
+            for item in self.n2_tree.get_children():
+                self.n2_tree.delete(item)
+            for rank, result in enumerate(self.n2_summary.ranked, start=1):
+                pair = ", ".join([*result.outaged_branch_ids, *result.outaged_generator_ids])
+                action = result.remedial_actions[0] if result.remedial_actions else "Engineering review required."
+                self.n2_tree.insert("", "end", values=(rank, pair, result.status.value.title(), f"{result.severity_score:.1f}", "—" if result.max_loading_pct is None else f"{result.max_loading_pct:.1f}%", len(result.cascade_steps), action))
+            self._record("n2_cascade_screening", "success", f"scenarios={len(self.n2_summary.results)}")
+            self.status_var.set(f"N-2 screening completed: {len(self.n2_summary.results)} scenarios ranked.")
+        except (ValidationError, RuntimeError) as exc:
+            self._record("n2_cascade_screening", "failed", str(exc))
+            messagebox.showerror(APP_NAME, f"N-2 screening could not complete.\n\n{exc}")
+
+    def _detach_topology_editor(self) -> None:
+        existing = getattr(self, "_topology_window", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            return
+        window = tk.Toplevel(self)
+        window.title(f"{APP_NAME} — Detached topology editor")
+        window.geometry("860x620")
+        window.configure(bg=COLORS["surface"])
+        ttk.Label(window, text="Detached topology editor", style="Section.TLabel").pack(anchor="w", padx=16, pady=(16, 3))
+        ttk.Label(window, text="Drag buses to update local positions; save the project to persist them.", style="Panel.TLabel", foreground=COLORS["muted"]).pack(anchor="w", padx=16, pady=(0, 10))
+        canvas = tk.Canvas(window, bg="#FBFDFF", highlightthickness=0)
+        canvas.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        self._topology_window = window
+        self._detached_topology_canvas = canvas
+        canvas.bind("<Configure>", lambda event: self._draw_topology_editor(canvas))
+        canvas.bind("<ButtonPress-1>", self._topology_press)
+        canvas.bind("<B1-Motion>", self._topology_drag)
+        canvas.bind("<ButtonRelease-1>", self._topology_release)
+        window.protocol("WM_DELETE_WINDOW", lambda: self._close_detached_panel("topology"))
+        self._draw_topology_editor(canvas)
+        self._record("topology_panel_detached", "success", "window opened")
+
+    def _detach_transient_panel(self) -> None:
+        existing = getattr(self, "_transient_window", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            return
+        window = tk.Toplevel(self)
+        window.title(f"{APP_NAME} — Detached transient curves")
+        window.geometry("860x520")
+        window.configure(bg=COLORS["surface"])
+        ttk.Label(window, text="Detached rotor-angle screening curves", style="Section.TLabel").pack(anchor="w", padx=16, pady=(16, 3))
+        ttk.Label(window, text="Reduced-order engineering screening only; validate with approved RMS/EMT studies before operational use.", style="Panel.TLabel", foreground=COLORS["muted"], wraplength=800).pack(anchor="w", padx=16, pady=(0, 10))
+        canvas = tk.Canvas(window, bg="#FBFDFF", highlightthickness=0)
+        canvas.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        self._transient_window = window
+        self._detached_transient_canvas = canvas
+        canvas.bind("<Configure>", lambda event: self._draw_transient(target=canvas))
+        window.protocol("WM_DELETE_WINDOW", lambda: self._close_detached_panel("transient"))
+        self._draw_transient(target=canvas)
+        self._record("transient_panel_detached", "success", "window opened")
+
+    def _close_detached_panel(self, kind: str) -> None:
+        window = getattr(self, f"_{kind}_window", None)
+        if window is not None and window.winfo_exists():
+            window.destroy()
+        if kind == "topology":
+            self._detached_topology_canvas = None
+        else:
+            self._detached_transient_canvas = None
+        setattr(self, f"_{kind}_window", None)
 
     def _authorize(self, permission: Permission) -> bool:
         if self.principal is None:
@@ -645,6 +925,32 @@ class GridResilienceApp(tk.Tk):
             messagebox.showinfo(APP_NAME, "Ranked contingency queue exported successfully.")
         except OSError as exc:
             messagebox.showerror(APP_NAME, f"Unable to export CSV.\n\n{exc}")
+
+    def _export_html_report(self) -> None:
+        self._export_engineering_report("html")
+
+    def _export_pdf_report(self) -> None:
+        self._export_engineering_report("pdf")
+
+    def _export_engineering_report(self, kind: str) -> None:
+        if not self._authorize(Permission.EXPORT_RESULTS):
+            return
+        if self.summary is None and self.n2_summary is None and self.transient_result is None:
+            messagebox.showwarning(APP_NAME, "Run at least one engineering screening before exporting a report.")
+            return
+        extension = ".html" if kind == "html" else ".pdf"
+        selected = filedialog.asksaveasfilename(title=f"Export {kind.upper()} engineering report", defaultextension=extension, initialfile=f"grid-resilience-engineering-report{extension}", filetypes=[(kind.upper(), f"*{extension}")])
+        if not selected:
+            return
+        try:
+            exporter = export_html_report if kind == "html" else export_pdf_report
+            exporter(selected, self.network, self.summary, self.n2_summary, self.transient_result)
+            self._record(f"export_{kind}_report", "success", Path(selected).name)
+            self.status_var.set(f"Exported {Path(selected).name}")
+            messagebox.showinfo(APP_NAME, f"{kind.upper()} engineering report exported successfully.")
+        except (OSError, RuntimeError) as exc:
+            self._record(f"export_{kind}_report", "failed", str(exc))
+            messagebox.showerror(APP_NAME, f"Unable to export {kind.upper()} report.\n\n{exc}")
 
     def _edit_model(self) -> None:
         if not self._authorize(Permission.EDIT_PROJECT):

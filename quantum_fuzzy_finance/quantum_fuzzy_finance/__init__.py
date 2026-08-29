@@ -10,23 +10,23 @@ Quantum-Fuzzy Finance Framework - Main Package
 - و سایر متدولوژی‌های نوین
 """
 
-__version__ = "1.0.0"
-__author__ = "Quantum-Fuzzy Finance Team"
+__version__ = "0.1.0"
+__author__ = "Quantum Fuzzy Developer"
 
 # Lazy imports to avoid circular dependencies
 def __getattr__(name):
     if name in ['FuzzyNumber', 'TriangularMF', 'TrapezoidalMF', 'GaussianMF', 
                 'FuzzyVariable', 'FuzzyInferenceSystem', 'FuzzyCreditScorer']:
-        from fuzzy_logic import (
+        from quantum_fuzzy_finance.fuzzy_logic import (
             FuzzyNumber, TriangularMF, TrapezoidalMF, GaussianMF,
             FuzzyVariable, FuzzyInferenceSystem, FuzzyCreditScorer
         )
         return locals()[name]
     elif name == 'FuzzyPortfolioOptimizer':
-        from fuzzy_logic.fuzzy_portfolio import FuzzyPortfolioOptimizer
+        from quantum_fuzzy_finance.fuzzy_logic.fuzzy_portfolio import FuzzyPortfolioOptimizer
         return FuzzyPortfolioOptimizer
     elif name in ['MarketEnvironment', 'RLOptimalExecution']:
-        from ml_agents.rl_execution import MarketEnvironment, RLOptimalExecution
+        from quantum_fuzzy_finance.ml_agents.rl_execution import MarketEnvironment, RLOptimalExecution
         return locals()[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

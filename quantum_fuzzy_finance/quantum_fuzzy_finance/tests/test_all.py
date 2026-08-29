@@ -273,3 +273,264 @@ def run_all_tests():
 if __name__ == "__main__":
     success = run_all_tests()
     sys.exit(0 if success else 1)
+
+
+def test_network_analysis():
+    """تست ماژول تحلیل شبکه"""
+    print("=" * 60)
+    print("Testing Network Analysis Module")
+    print("=" * 60)
+    
+    # تست تحلیلگر شبکه مالی
+    print("\n1. Testing Financial Network Analyzer...")
+    analyzer = FinancialNetworkAnalyzer()
+    
+    # افزودن بانک‌ها
+    analyzer.add_institution('bank_A', 'bank', total_assets=1000, capital_ratio=0.12)
+    analyzer.add_institution('bank_B', 'bank', total_assets=800, capital_ratio=0.10)
+    analyzer.add_institution('bank_C', 'bank', total_assets=500, capital_ratio=0.08)
+    analyzer.add_institution('bank_D', 'bank', total_assets=300, capital_ratio=0.15)
+    
+    # افزودن مواجهه‌های بین بانکی
+    analyzer.add_exposure('bank_A', 'bank_B', 100, 'interbank', 30)
+    analyzer.add_exposure('bank_B', 'bank_C', 80, 'interbank', 45)
+    analyzer.add_exposure('bank_C', 'bank_D', 50, 'interbank', 60)
+    analyzer.add_exposure('bank_A', 'bank_D', 70, 'interbank', 30)
+    
+    # تست معیارهای مرکزیّت
+    metrics = analyzer.calculate_centrality_metrics()
+    assert len(metrics) == 4, "Should have metrics for all 4 banks"
+    print("   ✓ Centrality metrics calculated")
+    
+    # تست شناسایی نهادهای سیستماتیک مهم
+    sifis = analyzer.identify_systemically_important_institutions()
+    assert isinstance(sifis, list), "SIFIs should be a list"
+    print(f"   ✓ SIFIs identified: {len(sifis)} institutions")
+    
+    # تست شبیه‌سازی سرایت
+    contagion_result = analyzer.simulate_contagion(['bank_A'], shock_magnitude=0.3)
+    assert 'failed_institutions' in contagion_result, "Contagion result missing key"
+    assert 'failure_rate' in contagion_result, "Failure rate missing"
+    print(f"   ✓ Contagion simulation completed, failure rate: {contagion_result['failure_rate']:.2%}")
+    
+    # تست معیارهای ریسک شبکه
+    risk_metrics = analyzer.calculate_network_risk_metrics()
+    assert 0 <= risk_metrics.density <= 1, "Density should be in [0, 1]"
+    assert risk_metrics.systemic_risk_score >= 0, "Systemic risk score should be non-negative"
+    print(f"   ✓ Network risk metrics calculated, systemic score: {risk_metrics.systemic_risk_score:.4f}")
+    
+    # تست آنتروپی انتقال
+    print("\n2. Testing Transfer Entropy Analyzer...")
+    te_analyzer = TransferEntropyAnalyzer(k_history=3)
+    
+    # تولید داده‌های آزمایشی
+    np.random.seed(42)
+    n = 500
+    leader = np.cumsum(np.random.randn(n))  # سری زمانی رهبر
+    follower = np.cumsum(np.random.randn(n)) + 0.5 * leader[:-3]  # پیرو با تأخیر
+    
+    te = te_analyzer.calculate_transfer_entropy(leader[:len(follower)], follower)
+    assert te >= 0, "Transfer entropy should be non-negative"
+    print(f"   ✓ Transfer entropy calculated: {te:.6f}")
+    
+    # تست تشخیص رهبران و پیروان
+    time_series = {
+        'asset_A': leader[:len(follower)],
+        'asset_B': follower
+    }
+    flow_result = te_analyzer.identify_leaders_and_followers(time_series, threshold=0.01)
+    assert 'leaders' in flow_result, "Leaders key missing"
+    assert 'followers' in flow_result, "Followers key missing"
+    print(f"   ✓ Leaders/followers identified: {len(flow_result['leaders'])} leaders, {len(flow_result['followers'])} followers")
+    
+    # تست تحلیل توپولوژیک داده‌ها (TDA)
+    print("\n3. Testing Topological Data Analyzer...")
+    tda = TopologicalDataAnalyzer(max_dimension=2)
+    
+    # تولید نقاط تصادفی در فضای سه‌بعدی
+    np.random.seed(42)
+    points = np.random.randn(50, 3)
+    
+    persistence = tda.compute_persistence_diagram(points)
+    assert isinstance(persistence, dict), "Persistence diagram should be a dict"
+    print(f"   ✓ Persistence diagram computed with {len(persistence)} dimensions")
+    
+    # تست تشخیص تغییر رژیم
+    np.random.seed(42)
+    returns = np.random.randn(500) * 0.02  # بازده‌های روزانه
+    regime_changes = tda.detect_regime_change(returns, window_size=50, threshold=0.3)
+    assert isinstance(regime_changes, list), "Regime changes should be a list"
+    print(f"   ✓ Regime change detection completed, {len(regime_changes)} changes detected")
+    
+    # تست تشخیص حباب
+    np.random.seed(42)
+    prices = 100 * np.cumprod(1 + np.random.randn(500) * 0.02)  # مسیر قیمت
+    bubble_result = tda.bubble_detection(prices)
+    assert 'is_bubble' in bubble_result, "Bubble result missing key"
+    assert 'bubble_strength' in bubble_result, "Bubble strength missing"
+    print(f"   ✓ Bubble detection completed, strength: {bubble_result['bubble_strength']:.4f}")
+    
+    print("\n✅ Network Analysis Module: ALL TESTS PASSED\n")
+    return True
+
+
+def test_engines():
+    """تست موتورهای پیشرفته مالی"""
+    print("=" * 60)
+    print("Testing Advanced Financial Engines")
+    print("=" * 60)
+    
+    # تست موتور مونت‌کارلو
+    print("\n1. Testing Monte Carlo Engine...")
+    mc = MonteCarloEngine(n_simulations=1000, random_seed=42)
+    
+    # شبیه‌سازی GBM
+    paths = mc.simulate_gbm(S0=100, mu=0.10, sigma=0.20, T=1.0, n_steps=252)
+    assert paths.shape[0] == 1000, "Should have 1000 simulations"
+    assert paths.shape[1] == 253, "Should have 253 time steps (including initial)"
+    assert paths[0, 0] == 100, "Initial price should be S0"
+    print(f"   ✓ GBM simulation completed: {paths.shape[0]} paths, {paths.shape[1]} steps")
+    
+    # قیمت‌گذاری اختیار اروپایی
+    option = mc.price_european_option(S0=100, K=100, T=0.25, r=0.05, sigma=0.20, option_type='call')
+    assert option.call_price > 0, "Call price should be positive"
+    assert abs(option.call_delta - 0.5) < 0.2, "ATM call delta should be around 0.5"
+    print(f"   ✓ European option priced: Call=${option.call_price:.4f}, Delta={option.call_delta:.4f}")
+    
+    # شبیه‌سازی چندمتغیره
+    n_assets = 3
+    S0_vec = np.array([100, 50, 75])
+    mu_vec = np.array([0.10, 0.08, 0.12])
+    cov_matrix = np.array([
+        [0.04, 0.01, 0.005],
+        [0.01, 0.09, 0.02],
+        [0.005, 0.02, 0.06]
+    ])
+    
+    multi_paths = mc.simulate_multivariate_gbm(S0_vec, mu_vec, cov_matrix, T=1.0, n_steps=252)
+    assert multi_paths.shape == (1000, 253, 3), "Wrong shape for multivariate paths"
+    print(f"   ✓ Multivariate GBM simulation completed: {multi_paths.shape}")
+    
+    # تولید سناریوهای استرس‌تست
+    base_returns = np.array([0.08, 0.06, 0.10])
+    base_cov = cov_matrix
+    scenarios = mc.generate_stress_scenarios(base_returns, base_cov)
+    assert 'market_crash' in scenarios, "Market crash scenario missing"
+    assert 'volatility_spike' in scenarios, "Volatility spike scenario missing"
+    print(f"   ✓ Stress scenarios generated: {list(scenarios.keys())}")
+    
+    # تست موتور ریسک
+    print("\n2. Testing Risk Engine...")
+    risk = RiskEngine(confidence_levels=[0.95, 0.99])
+    
+    # تولید بازده‌های تاریخی مصنوعی
+    np.random.seed(42)
+    n_days = 500
+    returns_data = np.random.randn(n_days, 3) * 0.02 + np.array([0.0003, 0.0002, 0.0004])
+    
+    # VaR تاریخی
+    var_hist = risk.calculate_var_historical(returns_data, horizon_days=1)
+    assert 'var_95' in var_hist, "VaR 95% missing"
+    assert 'var_99' in var_hist, "VaR 99% missing"
+    assert var_hist['var_95'] > 0, "VaR should be positive"
+    print(f"   ✓ Historical VaR calculated: 95%=${var_hist['var_95']:.4f}, 99%=${var_hist['var_99']:.4f}")
+    
+    # CVaR
+    cvar = risk.calculate_cvar(returns_data)
+    assert 'cvar_95' in cvar, "CVaR 95% missing"
+    assert cvar['cvar_95'] >= var_hist['var_95'], "CVaR should be >= VaR"
+    print(f"   ✓ CVaR calculated: 95%=${cvar['cvar_95']:.4f}")
+    
+    # معیارهای جامع ریسک
+    weights = np.array([0.4, 0.3, 0.3])
+    risk_metrics = risk.calculate_comprehensive_risk(returns_data, portfolio_weights=weights)
+    assert risk_metrics.sharpe_ratio is not None, "Sharpe ratio missing"
+    assert risk_metrics.max_drawdown >= 0, "Max drawdown should be non-negative"
+    print(f"   ✓ Comprehensive risk metrics: Sharpe={risk_metrics.sharpe_ratio:.4f}, MaxDD={risk_metrics.max_drawdown:.2%}")
+    
+    # تست تولیدکننده داده‌های مصنوعی (Diffusion)
+    print("\n3. Testing Diffusion Data Generator...")
+    diffusion = DiffusionDataGenerator(noise_schedule='linear', n_timesteps=50)
+    
+    # داده اولیه
+    np.random.seed(42)
+    initial_data = np.random.randn(100, 10)  # 100 مسیر، 10 ویژگی
+    
+    # تولید داده مصنوعی
+    synthetic = diffusion.generate_synthetic_paths(initial_data, n_paths=50, path_length=10)
+    assert synthetic.shape[0] == 50, "Wrong number of synthetic paths"
+    print(f"   ✓ Synthetic data generated: {synthetic.shape}")
+    
+    # افزایش داده
+    augmented = diffusion.augment_training_data(initial_data, augmentation_factor=2)
+    assert len(augmented) > len(initial_data), "Augmented data should be larger"
+    print(f"   ✓ Data augmentation completed: {len(initial_data)} -> {len(augmented)} samples")
+    
+    print("\n✅ Advanced Financial Engines: ALL TESTS PASSED\n")
+    return True
+
+
+def run_all_tests():
+    """اجرای تمام تست‌ها"""
+    print("\n" + "=" * 60)
+    print("QUANTUM-FUZZY FINANCE FRAMEWORK - COMPREHENSIVE TEST SUITE")
+    print("Version 0.3.0 - Networks & Engines Edition")
+    print("=" * 60 + "\n")
+    
+    results = {}
+    
+    try:
+        results['fuzzy_logic'] = test_fuzzy_logic()
+    except Exception as e:
+        print(f"❌ Fuzzy Logic Module FAILED: {e}")
+        results['fuzzy_logic'] = False
+    
+    try:
+        results['fuzzy_portfolio'] = test_fuzzy_portfolio()
+    except Exception as e:
+        print(f"❌ Fuzzy Portfolio Module FAILED: {e}")
+        results['fuzzy_portfolio'] = False
+    
+    try:
+        results['rl_agents'] = test_rl_agents()
+    except Exception as e:
+        print(f"❌ RL Agents Module FAILED: {e}")
+        results['rl_agents'] = False
+        
+    try:
+        results['network_analysis'] = test_network_analysis()
+    except Exception as e:
+        print(f"❌ Network Analysis Module FAILED: {e}")
+        results['network_analysis'] = False
+        
+    try:
+        results['engines'] = test_engines()
+    except Exception as e:
+        print(f"❌ Engines Module FAILED: {e}")
+        results['engines'] = False
+    
+    # خلاصه نتایج
+    print("\n" + "=" * 60)
+    print("TEST SUMMARY")
+    print("=" * 60)
+    
+    passed = sum(1 for v in results.values() if v)
+    total = len(results)
+    
+    for module, result in results.items():
+        status = "✅ PASSED" if result else "❌ FAILED"
+        print(f"{module}: {status}")
+    
+    print(f"\nTotal: {passed}/{total} modules passed")
+    
+    if passed == total:
+        print("\n🎉 ALL TESTS PASSED SUCCESSFULLY! 🎉\n")
+        return True
+    else:
+        print(f"\n⚠️  {total - passed} module(s) failed\n")
+        return False
+
+
+if __name__ == "__main__":
+    success = run_all_tests()
+    sys.exit(0 if success else 1)

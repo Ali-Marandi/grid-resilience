@@ -1,11 +1,58 @@
+```
+# Python
 __pycache__/
-*.py[cod]
-*.spec
-build/
-dist/
-.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.ENV
+.ENV.*
+.venv.bak/
+env.bak/
+
+# Testing
 .coverage
-*.gridresilience.json
-*.csv
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# IDEs
 .vscode/
 .idea/
+*.swp
+*.swo
+*.tmp
+
+# Environment variables
+.env
+.env.local
+.env.*
+```

@@ -6,6 +6,10 @@ Comprehensive Test Suite for Quantum-Fuzzy Finance Framework
 
 import numpy as np
 import sys
+import os
+
+# Add the quantum_fuzzy_finance package to the path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def test_fuzzy_logic():
@@ -14,7 +18,7 @@ def test_fuzzy_logic():
     print("Testing Fuzzy Logic Module")
     print("=" * 60)
     
-    from fuzzy_logic import (
+    from quantum_fuzzy_finance.fuzzy_logic import (
         FuzzyNumber, TriangularMF, TrapezoidalMF, GaussianMF,
         FuzzyVariable, FuzzyInferenceSystem, FuzzyCreditScorer
     )
@@ -81,7 +85,7 @@ def test_fuzzy_portfolio():
     print("Testing Fuzzy Portfolio Optimization Module")
     print("=" * 60)
     
-    from fuzzy_logic.fuzzy_portfolio import FuzzyPortfolioOptimizer
+    from quantum_fuzzy_finance.fuzzy_logic.fuzzy_portfolio import FuzzyPortfolioOptimizer
     
     # ایجاد optimizer
     print("\n1. Initializing FuzzyPortfolioOptimizer...")
@@ -143,7 +147,7 @@ def test_rl_execution():
     print("Testing RL Optimal Execution Module")
     print("=" * 60)
     
-    from ml_agents.rl_execution import MarketEnvironment, RLOptimalExecution
+    from quantum_fuzzy_finance.ml_agents.rl_execution import MarketEnvironment, RLOptimalExecution
     
     # تست محیط بازار
     print("\n1. Testing Market Environment...")

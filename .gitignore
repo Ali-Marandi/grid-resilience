@@ -1,44 +1,37 @@
 ```
-# Python build artifacts
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.so
-*.egg-info/
-build/
-dist/
-*.egg
-*.whl
-
-# Virtual environments
+.Python
 venv/
 .venv/
-env/
-.ENV/
+.env
+.env.local
+.env.*
 
-# IDE and editor files
+# Logs
+*.log
+
+# Coverage
+.coverage
+coverage/
+htmlcov/
+
+# Testing
+.pytest_cache/
+.mypy_cache/
+.hypothesis/
+
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *.tmp
 
-# Logs
-*.log
-
-# Coverage reports
-.coverage
-htmlcov/
-.coverage.*
-
-# Distribution / packaging
-.Python
-*.egg-info/
-.installed.cfg
-*.egg-info/
-*.egg
-
-# Pytest cache
-.pytest_cache/
+# OS
+.DS_Store
+Thumbs.db
 ```

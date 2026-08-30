@@ -1,0 +1,140 @@
+Metadata-Version: 2.4
+Name: quantum-fuzzy-finance
+Version: 0.1.0
+Summary: A comprehensive quantitative finance framework integrating fuzzy logic, reinforcement learning, and advanced mathematical methods from past, present, and future financial sciences
+Author-email: Quantum Fuzzy Developer <developer@quantum-fuzzy.finance>
+License: MIT
+Project-URL: Homepage, https://github.com/quantum-fuzzy/quantum-fuzzy-finance
+Project-URL: Documentation, https://github.com/quantum-fuzzy/quantum-fuzzy-finance#readme
+Project-URL: Repository, https://github.com/quantum-fuzzy/quantum-fuzzy-finance.git
+Project-URL: Bug Tracker, https://github.com/quantum-fuzzy/quantum-fuzzy-finance/issues
+Keywords: quantitative finance,fuzzy logic,reinforcement learning,portfolio optimization,credit scoring,algorithmic trading,financial modeling,risk management,machine learning
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Financial and Insurance Industry
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: Mathematics
+Classifier: Topic :: Office/Business :: Financial :: Investment
+Classifier: Topic :: Office/Business :: Financial :: Insurance
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: numpy>=1.21.0
+Requires-Dist: scipy>=1.7.0
+Requires-Dist: pandas>=1.3.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-cov>=3.0.0; extra == "dev"
+Requires-Dist: black>=22.0.0; extra == "dev"
+Requires-Dist: flake8>=4.0.0; extra == "dev"
+Requires-Dist: mypy>=0.950; extra == "dev"
+Provides-Extra: ml
+Requires-Dist: torch>=1.9.0; extra == "ml"
+Requires-Dist: scikit-learn>=1.0.0; extra == "ml"
+Provides-Extra: full
+Requires-Dist: numpy>=1.21.0; extra == "full"
+Requires-Dist: scipy>=1.7.0; extra == "full"
+Requires-Dist: pandas>=1.3.0; extra == "full"
+Requires-Dist: torch>=1.9.0; extra == "full"
+Requires-Dist: scikit-learn>=1.0.0; extra == "full"
+Requires-Dist: pytest>=7.0.0; extra == "full"
+
+# Quantum-Fuzzy Finance Framework
+
+یک چارچوب جامع مالی کمی که تلفیقی از علوم گذشته، حال و آینده فایننس را ارائه می‌دهد.
+
+## ساختار پروژه
+
+### ۱. علوم پایه (بنیان‌گذاران فایننس کمی)
+- **حسابان تصادفی و تئوری مارتینگل**: قیمت‌گذاری پیوسته، لم ایتو
+- **تئوری بازی‌ها**: میکرواستراکچر بازار، طراحی مکانیزم
+- **اقتصادسنجی کلاسیک و GMM**: کالیبراسیون مدل‌های مالی
+- **برنامه‌ریزی خطی**: بهینه‌سازی پرتفوی نسل اول
+
+### ۲. علوم مدرن (محرک‌های فعلی تحول)
+- **یادگیری تقویتی (RL)**: اجرای بهینه سفارشات با PPO/DDPG
+- **آمار بیزی و بلک-لیترمن**: ترکیب تعادل بازار با دیدگاه‌های مدیر
+- **نظریه گراف**: تحلیل شبکه‌های مالی و سرایت ریسک
+- **بهینه‌سازی محدب (SOCP)**: پرتفوی با قیود پیچیده
+- **PCA و مدل‌های فاکتوری**: استخراج فاکتورهای نهفته
+
+### ۳. علوم پیشرفته (مرزهای آینده)
+- **استنتاج علی و Causal ML**: گذار از همبستگی به علیت
+- **TDA (تحلیل توپولوژیک داده)**: شناسایی تغییر رژیم بازار
+- **مدل‌های مولد و Diffusion**: تولید داده مصنوعی برای استرس‌تست
+- **الگوریتم‌های کوانتومی**: QAE برای مونت‌کارلو، QAOA برای بهینه‌سازی
+- **تئوری اطلاعات و آنتروپی انتقال**: جریان اطلاعات بین دارایی‌ها
+- **یادگیری فدرال**: آموزش مدل بدون اشتراک داده حساس
+
+### ۴. منطق فازی (Fuzzy Logic)
+- **امتیازدهی اعتباری فازی**: متغیرهای زبانی به جای آستانه‌های سخت
+- **بهینه‌سازی پرتفوی فازی**: اعداد فازی مثلثی/ذوزنقه‌ای
+- **بلک-شولز فازی**: نوسان‌پذیری به عنوان بازه فازی
+- **معاملات الگوریتمی فازی**: قوانین اگر-آنگاه نرم
+- **ANFIS**: سیستم عصبی-فازی تطبیقی
+- **Fuzzy AHP/TOPSIS**: ارزش‌گذاری دارایی‌های نامشهود
+
+### ۵. ابزارهای کاربردی
+- **سری‌های زمانی**: ARIMA, SARIMA, GARCH, VAR, Cointegration
+- **مهندسی مالی**: Black-Scholes, مونت‌کارلو, VaR/CVaR
+- **یادگیری ماشین**: LSTM, Transformer, NLP, Anomaly Detection
+- **علوم رفتاری**: نظریه چشم‌انداز، اثر تمایل، عصب‌اقتصاد
+
+## نصب و راه‌اندازی
+
+```bash
+pip install numpy pandas scipy scikit-learn tensorflow torch networkx cvxpy skfuzzy
+pip install arch statsmodels quantlib-python causalml ripser
+```
+
+## مثال‌های کاربردی
+
+### ۱. بهینه‌سازی پرتفوی فازی
+```python
+from fuzzy_logic.fuzzy_portfolio import FuzzyPortfolioOptimizer
+
+optimizer = FuzzyPortfolioOptimizer()
+portfolio = optimizer.optimize(returns, covariance, fuzzy_constraints)
+```
+
+### ۲. یادگیری تقویتی برای اجرای سفارش
+```python
+from ml_agents.rl_execution import RLOptimalExecution
+
+agent = RLOptimalExecution(algorithm='PPO')
+execution_strategy = agent.train(market_data)
+```
+
+### ۳. تحلیل توپولوژیک برای تشخیص تغییر رژیم
+```python
+from advanced.tda_analysis import TDARegimeDetector
+
+detector = TDARegimeDetector()
+regime_change = detector.detect_persistent_homology(price_data)
+```
+
+### ۴. قیمت‌گذاری مشتقات با منطق فازی
+```python
+from fuzzy_logic.fuzzy_black_scholes import FuzzyBlackScholes
+
+model = FuzzyBlackScholes()
+price_range = model.price(S, K, T, fuzzy_volatility, risk_free_rate)
+```
+
+### ۵. شبکه عصبی-فازی برای پیش‌بینی ورشکستگی
+```python
+from fuzzy_logic.anfis import ANFISBankruptcyPredictor
+
+predictor = ANFISBankruptcyPredictor()
+bankruptcy_prob = predictor.predict(financial_ratios)
+```
+
+## مجوز
+
+MIT License

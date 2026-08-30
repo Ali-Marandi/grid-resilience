@@ -1,11 +1,44 @@
+```
+# Python build artifacts
 __pycache__/
-*.py[cod]
-*.spec
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.egg-info/
 build/
 dist/
-.pytest_cache/
-.coverage
-*.gridresilience.json
-*.csv
+*.egg
+*.whl
+
+# Virtual environments
+venv/
+.venv/
+env/
+.ENV/
+
+# IDE and editor files
 .vscode/
 .idea/
+*.swp
+*.swo
+*.tmp
+
+# Logs
+*.log
+
+# Coverage reports
+.coverage
+htmlcov/
+.coverage.*
+
+# Distribution / packaging
+.Python
+*.egg-info/
+.installed.cfg
+*.egg-info/
+*.egg
+
+# Pytest cache
+.pytest_cache/
+```

@@ -370,7 +370,9 @@ class TransferEntropyAnalyzer:
         
         # H(T_future | T_past, S_past)
         combined_past = np.column_stack([t_past, s_past])
-        h_t_future_given_combined = self._calculate_conditional_entropy(t_future, combined_past.flatten())
+        # Flatten properly by creating a combined index
+        combined_index = combined_past[:, 0] * 10 + combined_past[:, 1]
+        h_t_future_given_combined = self._calculate_conditional_entropy(t_future, combined_index)
         
         transfer_entropy = h_t_future_given_t_past - h_t_future_given_combined
         return max(0, transfer_entropy)  # آنتروپی انتقال نمی‌تواند منفی باشد
